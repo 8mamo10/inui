@@ -95,7 +95,17 @@ class TennisAnalysisVisualizer:
         return fig
     
     def create_player_heatmap(self, player_data, frame_dimensions, title="Player Movement Heatmap"):
-        fig, axes = plt.subplots(1, len(player_data), figsize=(6*len(player_data), 6))
+        # Limit number of players to prevent oversized images (tennis typically has 2-4 players)
+        max_players = 4
+        if len(player_data) > max_players:
+            print(f"Warning: Too many players detected ({len(player_data)}). Showing only first {max_players} players.")
+            player_data = dict(list(player_data.items())[:max_players])
+        
+        # Limit figure width to prevent memory issues
+        max_width = 24  # Maximum 24 inches wide
+        figure_width = min(6*len(player_data), max_width)
+        
+        fig, axes = plt.subplots(1, len(player_data), figsize=(figure_width, 6))
         
         if len(player_data) == 1:
             axes = [axes]
@@ -134,10 +144,15 @@ class TennisAnalysisVisualizer:
         plt.suptitle(title, fontsize=16, fontweight='bold')
         plt.tight_layout()
         
-        # Save plot
+        # Save plot with dynamic DPI to prevent oversized images
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = self.output_dir / f"player_heatmap_{timestamp}.png"
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        
+        # Calculate safe DPI based on figure size
+        max_pixels = 32768  # Safe maximum dimension for most systems
+        safe_dpi = min(300, max_pixels / max(figure_width, 6))
+        
+        plt.savefig(filename, dpi=safe_dpi, bbox_inches='tight')
         
         return fig
     
@@ -223,7 +238,9 @@ class TennisAnalysisVisualizer:
         ax.plot([0, self.court_width], [self.court_length, self.court_length], 'white', linewidth=2)  # Top
     
     def create_statistics_dashboard(self, analysis_results):
-        fig = plt.figure(figsize=(16, 12))
+        # Limit dashboard size to prevent memory issues
+        max_width, max_height = 14, 10  # Reduced from 16x12
+        fig = plt.figure(figsize=(max_width, max_height))
         gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
         
         # Extract statistics from analysis results
@@ -272,10 +289,15 @@ class TennisAnalysisVisualizer:
         
         plt.suptitle('Tennis Video Analysis Dashboard', fontsize=16, fontweight='bold')
         
-        # Save dashboard
+        # Save dashboard with safe DPI
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = self.output_dir / f"analysis_dashboard_{timestamp}.png"
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        
+        # Calculate safe DPI to prevent oversized images
+        max_pixels = 32768
+        safe_dpi = min(300, max_pixels / max(max_width, max_height))
+        
+        plt.savefig(filename, dpi=safe_dpi, bbox_inches='tight')
         
         return fig
     
@@ -533,14 +555,22 @@ def create_analysis_video(video_path, analysis_results, output_path, fps=30):
                 bbox = player['bbox']
                 player_id = player.get('id', 'Unknown')
                 
-                # Draw bounding box
-                cv2.rectangle(frame, (bbox[0], bbox[1]), 
-                            (bbox[0] + bbox[2], bbox[1] + bbox[3]), (0, 255, 0), 2)
+                # Ensure bbox has correct format and convert to int
+                if len(bbox) >= 4:
+                    x, y, w, h = map(int, bbox[:4])
+                    # Draw bounding box
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                elif len(bbox) >= 2:
+                    # If bbox only has 2 elements (center point), draw a small rectangle
+                    x, y = map(int, bbox[:2])
+                    cv2.rectangle(frame, (x-20, y-20), (x+20, y+20), (0, 255, 0), 2)
                 
                 # Draw player ID
-                cv2.putText(frame, f'Player {player_id}', 
-                           (bbox[0], bbox[1] - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                if len(bbox) >= 2:
+                    x, y = map(int, bbox[:2])
+                    cv2.putText(frame, f'Player {player_id}', 
+                               (x, y - 10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         
         # Add frame number and timestamp
         timestamp = frame_num / original_fps
